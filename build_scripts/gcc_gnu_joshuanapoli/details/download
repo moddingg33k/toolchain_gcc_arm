@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# Quit the script when the first command fails.
+set -e
+
+TAR=/bin/tar
+CURL="/c/Program Files (x86)/Git/bin/curl"
+BASENAME=/bin/basename
+BUNZIP2=/bin/bunzip2
+GUNZIP=/bin/gunzip
+
+PATH="$1"
+FILE=`"$BASENAME" "$PATH"`
+EXT="${FILE##*.}"
+BASE="${FILE%.*}"
+BBASE="${BASE%.*}"
+
+if [ "$EXT" == "bz2" ]
+then
+  UNCOMPRESS="$BUNZIP2"
+else
+  UNCOMPRESS="$GUNZIP"
+fi
+
+if [ ! -e "$BBASE" ]
+then
+  echo "fetching $PATH"
+  "$CURL" --location --silent --show-error "$PATH" | "$UNCOMPRESS" --stdout | "$TAR" xf - || echo "failed to fetch $PATH"
+else
+  echo "skipping $PATH because it was already fetched"
+fi

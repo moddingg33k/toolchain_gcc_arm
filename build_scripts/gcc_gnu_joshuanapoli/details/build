@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# Quit the script when the first command fails.
+set -e
+
+SOURCE=$1
+BUILD=$2
+INSTALLED_FLAG="$SOURCE-installed"
+
+if [ ! -e "$INSTALLED_FLAG" ]
+then
+  echo "Building $SOURCE"
+  echo "$BUILD"
+  mkdir --parents "$SOURCE"
+  cd "$SOURCE"
+  eval "$BUILD"
+  touch "$INSTALLED_FLAG"
+else
+  echo "Skipping $SOURCE because it is already installed."
+fi

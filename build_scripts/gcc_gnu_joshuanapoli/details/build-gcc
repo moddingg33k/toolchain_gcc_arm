@@ -1,0 +1,49 @@
+#!/bin/bash
+
+set -e
+
+INSTALL_DIR=$1
+TARGET=$2
+PARALLELISM=$3
+OPTIONS=$4
+BINUTILS_VERSION=$5
+GCC_VERSION=$6
+NEWLIB_VERSION=$7
+GDB_VERSION=$8
+NEWLIB_CFLAGS_FOR_TARGET=$9
+NEWLIB_CCASFLAGS=${10}
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+BUILD="$DIR/build"
+
+"$BUILD" "$INSTALL_DIR/src/$TARGET/binutils-$BINUTILS_VERSION" "../../binutils-$BINUTILS_VERSION/configure $OPTIONS && make && make install"
+
+echo "bootsrap GCC"
+GCC_CFLAGS="-fpermissive -Dffs=__builtin_ffs -v"
+GCC_CXXFLAGS="$GCC_CFLAGS"
+"$BUILD" "$INSTALL_DIR/src/$TARGET/gcc-$GCC_VERSION" "CFLAGS=\"$GCC_CFLAGS\" CXXFLAGS=\"$GCC_CXXFLAGS\" ../../gcc-$GCC_VERSION/configure $OPTIONS && make all-gcc && make install-gcc"
+
+NEWLIB_OPTIONS="--enable-newlib-io-long-long --enable-newlib-register-fini --disable-newlib-supplied-syscalls --disable-libgloss --disable-nls"
+"$BUILD" "$INSTALL_DIR/src/$TARGET/newlib-$NEWLIB_VERSION" "../../newlib-$NEWLIB_VERSION/configure $OPTIONS $NEWLIB_OPTIONS && make CFLAGS_FOR_TARGET=\"$NEWLIB_CFLAGS_FOR_TARGET\" CCASFLAGS=\"$NEWLIB_CCASFLAGS\" && make install"
+
+if [ ! -e "$INSTALL_DIR/src/$TARGET/gcc-$GCC_VERSION-final-installed" ]
+then
+  echo "finish building GCC"
+  if [ ! -e "$INSTALL_DIR/src/$TARGET/gcc-$GCC_VERSION" ]
+  then
+    mkdir --parents $INSTALL_DIR/src/$TARGET/gcc-$GCC_VERSION
+    cd $INSTALL_DIR/src/$TARGET/gcc-$GCC_VERSION
+    CFLAGS="$GCC_CFLAGS" CXXFLAGS="$GCC_CXXFLAGS" ../../gcc-$GCC_VERSION/configure $OPTIONS
+  fi
+  cd $INSTALL_DIR/src/$TARGET/gcc-$GCC_VERSION
+  if [ ! -e "$INSTALL_DIR/src/$TARGET/gcc-$GCC_VERSION-final-built" ]
+  then
+    make all
+  fi
+  make install
+  touch "$INSTALL_DIR/src/$TARGET/gcc-$GCC_VERSION-final-installed"
+else
+  echo "skipping final GCC build, because it is already installed"
+fi
+
+"$BUILD" "$INSTALL_DIR/src/$TARGET/gdb-$GDB_VERSION" "../../gdb-$GDB_VERSION/configure --prefix=$INSTALL_DIR --target=$TARGET && make all && make install"

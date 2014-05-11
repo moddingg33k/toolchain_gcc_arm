@@ -1,0 +1,85 @@
+#!/bin/bash
+
+GMP_VERSION=5.0.5
+MPFR_VERSION=3.1.1
+MPC_VERSION=1.0
+ISL_VERSION=0.10
+CLOOG_VERSION=0.17.0
+PPL_VERSION=0.11
+
+BINUTILS_VERSION=2.22.51
+GCC_VERSION=4.7.2
+GDB_VERSION=7.5
+NEWLIB_VERSION=1.20.0
+EXPAT_VERSION=2.1.0
+
+INSTALL_DIR=/opt/gnu/gcc-$GCC_VERSION
+
+PARALLELISM=8
+
+PATH=$(echo $PATH | sed -e 's;\(^\.:\|:\.$\|:\.\(:\)\);\2;g')
+echo "PATH=$PATH"
+
+SHARED_OPTIONS="--prefix=$INSTALL_DIR --with-gmp=$INSTALL_DIR --with-mpfr=$INSTALL_DIR --without-libjava --enable-libstdc++-v3 --enable-poison-system-directories --enable-languages=c,c++ --enable-lto --with-cloog=$INSTALL_DIR --enable-cloog-backend=isl --disable-cloog-version-check --disable-multilib --disable-werror --enable-build-with-cxx --with-gnu-as --with-gnu-ld"
+
+ARM_TARGET=arm-none-eabi
+PROGRAM_PREFIX=$ARM_TARGET-
+ARM_OPTIONS="$SHARED_OPTIONS --target=$ARM_TARGET --with-newlib --without-headers --with-float=soft --disable-shared --disable-interwork --disable-libssp --with-sysroot=$INSTALL_DIR/$ARM_TARGET --program-prefix=$PROGRAM_PREFIX --with-cpu=cortex-m3 --with-mode=thumb --with-tune=cortex-m3"
+
+PC_TARGET=x86_64-pc-mingw32
+PROGRAM_PREFIX=$PC_TARGET-
+PC_OPTIONS="$SHARED_OPTIONS --target=$PC_TARGET --with-sysroot=$INSTALL_DIR/$PC_TARGET --enable-poison-system-directories --program-prefix=$PROGRAM_PREFIX"
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+DOWNLOAD="$DIR/details/download"
+BUILD="$DIR/details/build"
+BUILD_GCC="$DIR/details/build-gcc"
+
+NEWLIB_CFLAGS_FOR_TARGET="-DMALLOC_PROVIDED -DREENTRANT_SYSCALLS_PROVIDED -D__DYNAMIC_REENT__ -ffunction-sections -fdata-sections -DPREFER_SIZE_OVER_SPEED -D__OPTIMIZE_SIZE__ -Os -fomit-frame-pointer -mcpu=cortex-m3 -mthumb -D__thumb2__ -D__BUFSIZ__=256"
+
+# Quit the script when the first command fails.
+set -e
+
+# Download sources
+mkdir --parents $INSTALL_DIR/src
+cd $INSTALL_DIR/src
+
+# We can have at most 3 simultaneous downloads from gnu.org.
+xargs -n 1 -P 3 "$DOWNLOAD" <<END
+ftp://sourceware.org/pub/binutils/snapshots/binutils-$BINUTILS_VERSION.tar.bz2
+ftp://sources.redhat.com/pub/newlib/newlib-$NEWLIB_VERSION.tar.gz
+http://sourceforge.net/projects/expat/files/expat/2.1.0/expat-$EXPAT_VERSION.tar.gz
+ftp://ftp.gmplib.org/pub/gmp-$GMP_VERSION/gmp-$GMP_VERSION.tar.bz2
+http://www.mpfr.org/mpfr-current/mpfr-$MPFR_VERSION.tar.bz2
+http://www.multiprecision.org/mpc/download/mpc-$MPC_VERSION.tar.gz
+ftp://ftp.gnu.org/gnu/gcc/gcc-$GCC_VERSION/gcc-$GCC_VERSION.tar.bz2
+ftp://ftp.gnu.org/gnu/gdb/gdb-$GDB_VERSION.tar.bz2
+ftp://gcc.gnu.org/pub/gcc/infrastructure/isl-$ISL_VERSION.tar.bz2
+ftp://gcc.gnu.org/pub/gcc/infrastructure/cloog-$CLOOG_VERSION.tar.gz
+ftp://gcc.gnu.org/pub/gcc/infrastructure/ppl-$PPL_VERSION.tar.gz
+END
+
+echo "Building gmp, an arbitrary precision arithmetic library required by GCC"
+"$BUILD" "$INSTALL_DIR/src/gmp-$GMP_VERSION" "./configure --prefix=$INSTALL_DIR --enable-cxx --enable-static --disable-shared && make install"
+
+echo "Building MPFR, a multiple precision floating point library required by GCC"
+"$BUILD" "$INSTALL_DIR/src/mpfr-$MPFR_VERSION" "./configure --prefix=$INSTALL_DIR --with-gmp=$INSTALL_DIR --enable-static --disable-shared && make install"
+
+echo "Building MPC, an arbitrary precision complex number library required by GCC"
+"$BUILD" "$INSTALL_DIR/src/mpc-$MPC_VERSION" "./configure --prefix=$INSTALL_DIR --with-gmp=$INSTALL_DIR --with-mpfr=$INSTALL_DIR --enable-static --disable-shared && make install"
+
+echo "Building ISL, required by GCC"
+"$BUILD" "$INSTALL_DIR/src/isl-$ISL_VERSION" "./configure --prefix=$INSTALL_DIR --with-gmp=system --with-gmp-prefix=$INSTALL_DIR && make install"
+
+echo "Building PPL, required by CLOOG"
+echo "The build may hang 'checking if the compiler has the remainder bug'. Kill the conftest.exe process to continue."
+"$BUILD" "$INSTALL_DIR/src/ppl-$PPL_VERSION" "./configure --prefix=$INSTALL_DIR --with-gmp=system --with-gmp-prefix=$INSTALL_DIR --with-isl=system --with-bits=gmp --enable-static --disable-shared && make install"
+
+echo "Building CLOOG, required by GCC"
+"$BUILD" "$INSTALL_DIR/src/cloog-$CLOOG_VERSION" "./configure --prefix=$INSTALL_DIR --with-gmp=system --with-gmp-prefix=$INSTALL_DIR --with-isl=system --with-bits=gmp --with-polylib=system --with-polylib-prefix=$INSTALL_DIR && make install"
+
+echo "Building libexpat, an xml parsing library required by GDB"
+"$BUILD" "$INSTALL_DIR/src/expat-$EXPAT_VERSION" "./configure --prefix=$INSTALL_DIR && make install"
+
+# ARM build
+"$BUILD_GCC" "$INSTALL_DIR" "$ARM_TARGET" "$PARALLELISM" "$ARM_OPTIONS" "$BINUTILS_VERSION" "$GCC_VERSION" "$NEWLIB_VERSION" "$GDB_VERSION" "$NEWLIB_CFLAGS_FOR_TARGET" "-mcpu=cortex-m3 -mthumb -D__thumb2__"
